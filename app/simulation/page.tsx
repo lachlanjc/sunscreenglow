@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect } from "react";
-import useSWR from "swr";
 import AnimatedNumbers from "react-animate-number-ticker";
 import "react-animate-number-ticker/dist/index.css";
 
@@ -8,14 +7,6 @@ interface Value {
   value: string;
   created_at: string;
 }
-
-const fetcher = (url: string) =>
-  fetch(url, {
-    // @ts-expect-error dont have time to figure out why this errors
-    headers: {
-      "X-AIO-Key": process.env.NEXT_PUBLIC_ADAFRUIT_IO_KEY,
-    },
-  }).then((r) => r.json());
 
 function getRelativeTime(date: string) {
   const now = new Date();
@@ -35,15 +26,15 @@ function getRelativeTime(date: string) {
   } else {
     return (
       <>
-        <AnimatedNumbers number={seconds} /> second
-        {seconds > 1 ? (
-          "s"
-        ) : (
+        <AnimatedNumbers number={seconds.toString()} /> second
+        {seconds === 1 ? (
           <span className="invisible" aria-hidden>
             s
           </span>
-        )}{" "}
-        ago
+        ) : (
+          "s"
+        )}
+        {" ago"}
       </>
     );
   }
@@ -52,22 +43,13 @@ function getRelativeTime(date: string) {
 function OnlineStatus({
   onlineRecently,
   latest,
-}: {
-  onlineRecently: boolean;
-  latest: Value;
-}) {
+}: // time
+  {
+    onlineRecently: boolean;
+    latest: Value;
+    time: number;
+  }) {
   const date = latest?.created_at;
-
-  // re-render every second
-  const [time, setTime] = useState(Date.now());
-
-  useEffect(() => {
-    const interval = setInterval(() => setTime(Date.now()), 1000);
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
-
   return (
     <>
       {onlineRecently ? "Updated" : "Last online"}&nbsp;
@@ -87,24 +69,40 @@ function Capacity({ latest }: { latest: string }) {
   return <AnimatedNumbers number={Number(decimals.format(volts))} />;
 }
 
-const SECS_ONLINE = 15;
 export default function Home() {
-  const { data, isLoading, error } = useSWR(
-    "https://io.adafruit.com/api/v2/lachlanjc/feeds/counter/data?include=value,created_at",
-    fetcher,
-    {
-      refreshInterval: 1000,
-      refreshWhenHidden: false,
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
-    }
-  );
+  // re-render every second
+  const [time, setTime] = useState(Date.now());
+  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<Array<Value>>([]);
+
+  useEffect(() => {
+    const launch = setTimeout(() => {
+      setIsLoading(false);
+    }, 3500);
+    const addData = setInterval(() => {
+      setTime(Date.now());
+      // get random number between 900 and 1200
+      setData((vals) => [
+        {
+          value: (Math.random() * 1023).toString(),
+          created_at: new Date().toISOString(),
+        },
+        ...vals,
+      ]);
+    }, 4000);
+    const tick = setInterval(() => {
+      setTime(Date.now());
+    }, 1000);
+    return () => {
+      clearTimeout(launch);
+      clearInterval(addData);
+      clearInterval(tick);
+    };
+  }, []);
+
   const latest = data?.[0];
 
-  const onlineRecently =
-    !isLoading &&
-    !error &&
-    new Date(latest?.created_at).getTime() > Date.now() - 1000 * SECS_ONLINE;
+  const onlineRecently = !isLoading && data.length > 1;
 
   return (
     <main
@@ -120,14 +118,16 @@ export default function Home() {
           {isLoading ? (
             "…"
           ) : (
-            <OnlineStatus onlineRecently={onlineRecently} latest={latest} />
+            <OnlineStatus
+              onlineRecently={onlineRecently}
+              latest={latest}
+              time={time}
+            />
           )}
         </div>
       </div>
 
-      {/* before:animate-[pulse_3s_cubic-bezier(0,0,0.2,1)_infinite] */}
-      {/* bg-gradient-to-br from-black to-stone-500 bg-clip-text text-transparent dark:text-inherit */}
-      <div className="font-display tabular-nums text-8xl relative flex place-items-center  before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[] after:absolute after:-z-20 after:rounded-full after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-amber-400 after:via-orange-300 after:to-orange-400 after:animate-pulse after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-orange-700 before:dark:opacity-10 after:dark:from-amber-900 after:dark:opacity-40 before:lg:h-[360px]">
+      <div className="font-display tabular-nums text-8xl relative flex place-items-center  before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:rounded-full after:translate-x-1/3 after:bg-gradient-conic after:from-amber-400 after:via-orange-300 after:to-orange-400 after:animate-pulse after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-orange-700 before:dark:opacity-10 after:dark:from-amber-900 after:dark:opacity-40 before:lg:h-[360px]">
         {onlineRecently ? (
           <>
             <Capacity latest={latest?.value} /> &nbsp;
